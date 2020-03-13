@@ -34,8 +34,9 @@ class Memory(object):
         return len(self.memory)
 
 class EnvSampler(object):
-    def __init__(self, env, max_episode_step=1000, capacity=1e5):
+    def __init__(self, env, gamma=1, max_episode_step=1000, capacity=1e5):
         self.env = env
+        self.gamma = gamma
         self.max_episode_step = max_episode_step
         self.action_scale = (env.action_space.high - env.action_space.low)/2
         self.action_bias = (env.action_space.high + env.action_space.low)/2
@@ -46,8 +47,7 @@ class EnvSampler(object):
     def env_init(self):
         self.state = self.env.reset()
         self.done = False
-        self.episode_step = 0
-        self.episode_reward = 0.0
+        self.episode_step = 1
 
     # action_encode and action_decode project action into [-1, 1]^n
     def _action_encode(self, action):
@@ -62,38 +62,42 @@ class EnvSampler(object):
         else:
             action_ = self.env.action_space.sample()
         action =self._action_decode(action_)
-        next_state, reward, self.done, _ = self.env.step(action) 
-        if self.episode_step >= self.max_episode_step:
-            self.done = True
-        self.memory.push(self.state, action_, reward, next_state, self.done)
 
-        self.episode_reward += reward
-        self.episode_step += 1
-        self.state = next_state
+        state = self.state
+
+        if self.gamma < 1 and self.gamma > 0:
+            if random.random() < self.gamma:
+                self.state, reward, self.done, _ = self.env.step(action) 
+            else:
+                self.env_init()
+                reward, self.done = 0, False
+        else:
+            self.state, reward, self.done, _ = self.env.step(action)
+            self.episode_step += 1
+            if self.episode_step >= self.max_episode_step:
+                self.done = True
+
+        self.memory.push(state, action_, reward, self.state, self.done)
 
         if self.done:
-            episode_reward = self.episode_reward
             self.env_init()
-            return True, episode_reward
-
-        return False, self.episode_reward
     
     def sample(self, batch_size):
         return self.memory.sample(batch_size)
     
     def test(self, get_action, times=10):
         episode_reward = 0.0
+        episode_step = 1
         for _ in range(times):
             self.env_init()
             while(not self.done):
                 action_ = get_action(self.state)
                 action =self._action_decode(action_)
                 next_state, reward, self.done, _ = self.env.step(action) 
-                if self.episode_step >= self.max_episode_step:
-                    self.done = True
-                self.episode_reward += reward
-                self.episode_step += 1
                 self.state = next_state
-            episode_reward += self.episode_reward
+                episode_reward += reward
+                episode_step += 1
+                if episode_step >= self.max_episode_step:
+                    self.done = True
         self.env_init()
         return episode_reward / times

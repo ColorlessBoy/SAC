@@ -19,7 +19,7 @@ def run(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     random.seed(args.seed)
-    env.seed(args.seed)
+    # env.seed(args.seed)
 
     # 2. Create nets. 
     state_size = env.observation_space.shape[0]
@@ -29,7 +29,7 @@ def run(args):
     ac_target = ActorCritic(state_size, action_size, hidden_sizes).to(device)
     hard_update(ac, ac_target)
 
-    env_sampler = EnvSampler(env, max_episode_step=1000, capacity=1e5)
+    env_sampler = EnvSampler(env, gamma=1, max_episode_step=1000, capacity=1e6)
 
     alg =   SAC(ac, ac_target,
                 gamma=0.99, alpha=0.2,
@@ -52,7 +52,7 @@ def run(args):
     for step in range(1, args.total_steps+1):
         env_sampler.addSample(get_action)
 
-        if step % args.update_every == 0:
+        if step > args.update_after and step % args.update_every == 0:
             for _ in range(args.update_every):
                 batch = env_sampler.sample(args.batch_size)
                 losses = alg.update(*batch)
@@ -72,18 +72,20 @@ if __name__ == '__main__':
                         help='name of environment name (default: HalfCheetah-v2)')
     parser.add_argument('--device', default='cpu', metavar='G',
                         help='device (default cpu)')
-    parser.add_argument('--seed', type=int, default=12345, metavar='N',
+    parser.add_argument('--seed', type=int, default=0, metavar='N',
                         help='random seed (default: 0)')
     parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
-                        help='start steps (default: 0)')
+                        help='start steps')
     parser.add_argument('--total_steps', type=int, default=100000, metavar='N',
-                        help='total epochs (default: 0)')
+                        help='total epochs')
+    parser.add_argument('--update_after', type=int, default=1000, metavar='N',
+                        help='update after')
     parser.add_argument('--update_every', type=int, default=100, metavar='N',
-                        help='update steps (default: 0)')
+                        help='update steps')
     parser.add_argument('--batch_size', type=int, default=100, metavar='N',
-                        help='batch size (default: 0)')
+                        help='batch size')
     parser.add_argument('--test_every', type=int, default=10000, metavar='N',
-                        help='test_every (default: 0)')
+                        help='test_every')
     args = parser.parse_args()
 
     # Test Dir
@@ -99,10 +101,10 @@ if __name__ == '__main__':
 
     start_time = time()
 
-    for step, test_reward, q1_loss, q2_loss, pi_loss, target_loss in run(args):
+    for step, test_reward, q_loss, pi_loss, target_loss in run(args):
         test_writer.writerow([step, test_reward])
-        print("Step {}: Reward = {:>10.6f}, q1_loss = {:>8.6f}, q2_loss = {:>8.6f}, pi_loss = {:>8.6f}, target_loss = {:>8.6f}".format(
-            step, test_reward, q1_loss, q2_loss, pi_loss, target_loss
+        print("Step {}: Reward = {:>10.6f}, q_loss = {:>8.6f}, pi_loss = {:>8.6f}, target_loss = {:>8.6f}".format(
+            step, test_reward, q_loss, pi_loss, target_loss
         ))
 
     print("Total time: {}s.".format(time() - start_time))
