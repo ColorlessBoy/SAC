@@ -100,10 +100,9 @@ class EnvSampler(object):
 
 
 class EnvSampler2(object):
-    def __init__(self, env, gamma=0.997, max_episode_step=1000, capacity=1e5):
+    def __init__(self, env, gamma=0.999, capacity=1e5):
         self.env = env
         self.gamma = gamma
-        self.max_episode_step = max_episode_step
         self.action_scale = (env.action_space.high - env.action_space.low)/2
         self.action_bias = (env.action_space.high + env.action_space.low)/2
         self.memory = Memory(capacity)
@@ -131,30 +130,24 @@ class EnvSampler2(object):
         state = self.state
 
         self.state, reward, self.done, _ = self.env.step(action) 
-        if random.random() >= self.gamma:
+
+        if self.done or random.random() >= self.gamma:
             self.env_init()
 
         self.memory.push(state, action_, reward, self.state, self.done)
-
-        if self.done:
-            self.env_init()
     
     def sample(self, batch_size):
         return self.memory.sample(batch_size)
-    
-    def test(self, get_action, times=10):
-        episode_reward = 0.0
-        episode_step = 1
-        for _ in range(times):
-            self.env_init()
-            while(not self.done):
-                action_ = get_action(self.state)
-                action =self._action_decode(action_)
-                next_state, reward, self.done, _ = self.env.step(action) 
-                self.state = next_state
-                episode_reward += reward
-                episode_step += 1
-                if episode_step >= self.max_episode_step:
-                    self.done = True
+
+    def test(self, get_action, test_steps=10000, test_gamma=0.999*0.99):
+        total_reward = 0.0
         self.env_init()
-        return episode_reward / times
+        for _ in range(test_steps):
+            action_ = get_action(self.state)
+            action =self._action_decode(action_)
+            self.state, reward, self.done, _ = self.env.step(action) 
+            total_reward += reward
+            if self.done or random.random() >= test_gamma:
+                self.env_init()
+        self.env_init()
+        return total_reward / test_steps

@@ -11,7 +11,7 @@ from utils import EnvSampler, EnvSampler2, hard_update
 from sac import SAC
 
 def run(args):
-    env = gym.make(args.env_name)
+    env = gym.make(args.env)
 
     device = torch.device(args.device)
 
@@ -29,11 +29,11 @@ def run(args):
     ac_target = ActorCritic(state_size, action_size, hidden_sizes).to(device)
     hard_update(ac, ac_target)
 
-    env_sampler = EnvSampler(env, max_episode_step=1000, capacity=1e5)
-    # env_sampler = EnvSampler2(env, gamma=0.998, max_episode_step=1000, capacity=1e6)
+    # env_sampler = EnvSampler(env, max_episode_step=4000, capacity=1e6)
+    env_sampler = EnvSampler2(env, gamma=args.gamma1, capacity=1e6)
 
     alg =   SAC(ac, ac_target,
-                gamma=0.99, alpha=0.2,
+                gamma=args.gamma2, alpha=0.2,
                 q_lr=1e-3, pi_lr=1e-3, target_lr = 5e-3,
                 device=device)
 
@@ -59,17 +59,17 @@ def run(args):
                 losses = alg.update(*batch)
         
         if step % args.test_every == 0:
-            test_reward = env_sampler.test(get_mean_action, 10)
+            test_reward = env_sampler.test(get_mean_action)
             yield (step, test_reward, *losses)
     
-    torch.save(ac.pi.state_dict(), './env_{}_pi_net.pth.tar'.format(args.env_name))
+    torch.save(ac.pi.state_dict(), './env_{}_pi_net.pth.tar'.format(args.env))
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Run experiment with optional args')
-    parser.add_argument('--env_name', default='HalfCheetah-v2', metavar='G',
+    parser.add_argument('--env', default='HalfCheetah-v2', metavar='G',
                         help='name of environment name (default: HalfCheetah-v2)')
     parser.add_argument('--device', default='cpu', metavar='G',
                         help='device (default cpu)')
@@ -85,12 +85,16 @@ if __name__ == '__main__':
                         help='batch size')
     parser.add_argument('--test_every', type=int, default=10000, metavar='N',
                         help='test_every')
+    parser.add_argument('--gamma1', type=float, default=0.999, metavar='F',
+                        help='gamma in sampler')
+    parser.add_argument('--gamma2', type=float, default=0.99, metavar='F',
+                        help='gamma in SAC')
     args = parser.parse_args()
 
     # Test Dir
-    test_logdir = "./logs/env_{}".format(args.env_name)
+    test_logdir = "./logs/env_{}".format(args.env)
     test_file_name = 'test_env_{}_batch{}_seed{}_total_steps{}_time{}.csv'.format( 
-                    args.env_name, args.batch_size, args.seed, args.total_steps, time())
+                    args.env, args.batch_size, args.seed, args.total_steps, time())
     if not os.path.exists(test_logdir):
         os.makedirs(test_logdir)
     test_full_name = os.path.join(test_logdir, test_file_name)
@@ -102,7 +106,7 @@ if __name__ == '__main__':
 
     for step, test_reward, q_loss, pi_loss, target_loss in run(args):
         test_writer.writerow([step, test_reward])
-        print("Step {}: Reward = {:>10.6f}, q_loss = {:>8.6f}, pi_loss = {:>8.6f}, target_loss = {:>8.6f}".format(
+        print("Step {}: Reward = {:>8.6f}, q_loss = {:>8.6f}, pi_loss = {:>8.6f}, target_loss = {:>8.6f}".format(
             step, test_reward, q_loss, pi_loss, target_loss
         ))
 
