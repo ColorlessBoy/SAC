@@ -48,7 +48,7 @@ class PG(object):
 
         return q_loss, pi_loss, target_loss
     
-    def get_q_loss(self, state, action, reward, nstate, done, ap=0.0):
+    def get_q_loss(self, state, action, reward, nstate, done):
         with torch.no_grad():
             naction, log_pi_naction = self.ac_target.pi(nstate)
             q1_target = self.ac_target.q1(nstate, naction)
@@ -60,12 +60,7 @@ class PG(object):
         q1 = self.ac.q1(state, action)
         q2 = self.ac.q2(state, action)
 
-        action_penalty = 0.0
-        if ap > 0.0:
-            gradient = torch.autograd.grad((q1+q2).mean(), action, retain_graph=True)[0]
-            action_penalty = ap * gradient.pow(2).mean()
-
-        q_loss = F.mse_loss(q1, backup) + F.mse_loss(q2, backup) + action_penalty
+        q_loss = F.mse_loss(q1, backup) + F.mse_loss(q2, backup)
 
         return q_loss
     
