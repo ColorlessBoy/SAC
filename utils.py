@@ -1,5 +1,6 @@
 from collections import namedtuple
-import random
+# import random
+import numpy as np
 # Taken from
 # https://github.com/pytorch/tutorials/blob/master/Reinforcement%20(Q-)Learning%20with%20PyTorch.ipynb
 
@@ -27,7 +28,9 @@ class Memory(object):
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size):
-        batch = random.sample(self.memory, batch_size)
+        # batch = random.sample(self.memory, batch_size)
+        idxes = np.random.randint(0, len(self.memory), batch_size)
+        batch = [self.memory[idx] for idx in idxes]
         return Transition(*zip(*batch))
 
     def __len__(self):
@@ -131,15 +134,15 @@ class EnvSampler2(object):
 
         self.state, reward, self.done, _ = self.env.step(action) 
 
-        if self.done or random.random() >= self.gamma:
-            self.env_init()
-
         self.memory.push(state, action_, reward, self.state, self.done)
+
+        if self.done or np.random.random() >= self.gamma:
+            self.env_init()
     
     def sample(self, batch_size):
         return self.memory.sample(batch_size)
 
-    def test(self, get_action, test_steps=10000, test_gamma=0.999*0.99):
+    def test(self, get_action, test_steps=10000, test_gamma=0.999):
         total_reward = 0.0
         self.env_init()
         for _ in range(test_steps):
@@ -147,7 +150,7 @@ class EnvSampler2(object):
             action =self._action_decode(action_)
             self.state, reward, self.done, _ = self.env.step(action) 
             total_reward += reward
-            if self.done or random.random() >= test_gamma:
+            if self.done or np.random.random() >= test_gamma:
                 self.env_init()
         self.env_init()
         return total_reward / test_steps

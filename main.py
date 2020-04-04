@@ -3,12 +3,11 @@ import torch
 import os
 import csv
 from time import time
-import random
+import numpy as np
 
-
-from models import ActorCritic
+from models import ActorCritic, ActorCritic
 from utils import EnvSampler, EnvSampler2, hard_update
-from sac import SAC
+from pg import PG
 
 def run(args):
     env = gym.make(args.env)
@@ -18,28 +17,36 @@ def run(args):
     # 1. Set some necessary seed.
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-    random.seed(args.seed)
-    env.seed(args.seed)
+    # np.random.seed(args.seed)
+    # env.seed(args.seed)
 
     # 2. Create nets. 
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.shape[0]
-    hidden_sizes = (256, 256)
-    ac = ActorCritic(state_size, action_size, hidden_sizes).to(device)
-    ac_target = ActorCritic(state_size, action_size, hidden_sizes).to(device)
+    policy_hidden_sizes = (256, 256, 256)
+    q_hidden_sizes = (256, 256, 256)
+    ac = ActorCritic(state_size, action_size, 
+                    policy_hidden_sizes, q_hidden_sizes, 
+                    activation=torch.nn.LeakyReLU(inplace=True),
+                    generative=True).to(device)
+    ac_target = ActorCritic(state_size, action_size, 
+                    policy_hidden_sizes, q_hidden_sizes, 
+                    activation=torch.nn.LeakyReLU(inplace=True),
+                    generative=True).to(device)
     hard_update(ac, ac_target)
 
     # env_sampler = EnvSampler(env, max_episode_step=4000, capacity=1e6)
     env_sampler = EnvSampler2(env, gamma=args.gamma1, capacity=1e6)
 
-    alg =   SAC(ac, ac_target,
+    alg =   PG(ac, ac_target,
                 gamma=args.gamma2, alpha=0.2,
                 q_lr=1e-3, pi_lr=1e-3, target_lr = 5e-3,
                 device=device)
 
     def get_action(state):
         state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        return ac_target.get_action(state)
+        action = ac_target.get_action(state, sigma=args.noise_sigma, clip=args.noise_clip) 
+        return action
 
     def get_mean_action(state):
         state = torch.FloatTensor(state).unsqueeze(0).to(device)
@@ -59,10 +66,10 @@ def run(args):
                 losses = alg.update(*batch)
         
         if step % args.test_every == 0:
-            test_reward = env_sampler.test(get_mean_action)
+            test_reward = env_sampler.test(get_mean_action, test_gamma=args.gamma2)
             yield (step, test_reward, *losses)
     
-    torch.save(ac.pi.state_dict(), './env_{}_pi_net.pth.tar'.format(args.env))
+    torch.save(ac.state_dict(), './env_{}_ac_time{}.pth.tar'.format(args.env, time()))
 
 
 if __name__ == '__main__':
@@ -79,7 +86,7 @@ if __name__ == '__main__':
                         help='start steps')
     parser.add_argument('--total_steps', type=int, default=100000, metavar='N',
                         help='total epochs')
-    parser.add_argument('--update_every', type=int, default=100, metavar='N',
+    parser.add_argument('--update_every', type=int, default=50, metavar='N',
                         help='update steps')
     parser.add_argument('--batch_size', type=int, default=100, metavar='N',
                         help='batch size')
@@ -88,7 +95,11 @@ if __name__ == '__main__':
     parser.add_argument('--gamma1', type=float, default=0.999, metavar='F',
                         help='gamma in sampler')
     parser.add_argument('--gamma2', type=float, default=0.99, metavar='F',
-                        help='gamma in SAC')
+                        help='gamma in PG')
+    parser.add_argument('--noise_sigma', type=float, default=0.2, metavar='F',
+                        help='noise sigma')
+    parser.add_argument('--noise_clip', type=float, default=0.5, metavar='F',
+                        help='noise clip')
     args = parser.parse_args()
 
     # Test Dir
@@ -107,7 +118,7 @@ if __name__ == '__main__':
     for step, test_reward, q_loss, pi_loss, target_loss in run(args):
         test_writer.writerow([step, test_reward])
         print("Step {}: Reward = {:>8.6f}, q_loss = {:>8.6f}, pi_loss = {:>8.6f}, target_loss = {:>8.6f}".format(
-            step, test_reward, q_loss, pi_loss, target_loss
+            step, test_reward, q_loss, (1 - args.gamma2)*pi_loss, target_loss
         ))
 
     print("Total time: {}s.".format(time() - start_time))

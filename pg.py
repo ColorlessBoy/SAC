@@ -3,7 +3,7 @@ from torch.optim import Adam, SGD
 import torch.nn.functional as F
 import itertools
 
-class SAC(object):
+class PG(object):
     def __init__(self, ac, ac_target,
                 gamma=0.99, alpha=0.2,
                 q_lr=1e-3, pi_lr=1e-3, target_lr = 5e-3,
@@ -19,9 +19,9 @@ class SAC(object):
         self.device = device
 
         # optimization
-        q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
+        self.q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
         self.pi_optim = Adam(self.ac.pi.parameters(), lr = pi_lr)
-        self.q_optim  = Adam(q_params, lr = q_lr)
+        self.q_optim  = Adam(self.q_params, lr = q_lr)
         self.target_optim = SGD(self.ac_target.parameters(),  lr = target_lr)
 
     def update(self, state, action, reward, nstate, done):
@@ -48,22 +48,31 @@ class SAC(object):
 
         return q_loss, pi_loss, target_loss
     
-    def get_q_loss(self, state, action, reward, nstate, done):
+    def get_q_loss(self, state, action, reward, nstate, done, ap=0.0):
         with torch.no_grad():
             naction, log_pi_naction = self.ac_target.pi(nstate)
             q1_target = self.ac_target.q1(nstate, naction)
             q2_target = self.ac_target.q2(nstate, naction)
             q_target = torch.min(q1_target, q2_target)
-            backup = reward + self.gamma * (1 - done) * (q_target - self.alpha * log_pi_naction)
+            backup = reward + self.gamma * (1 - done) * q_target
+
+        action.requires_grad = True
         q1 = self.ac.q1(state, action)
         q2 = self.ac.q2(state, action)
-        q_loss = F.mse_loss(q1, backup) + F.mse_loss(q2, backup)
+
+        action_penalty = 0.0
+        if ap > 0.0:
+            gradient = torch.autograd.grad((q1+q2).mean(), action, retain_graph=True)[0]
+            action_penalty = ap * gradient.pow(2).mean()
+
+        q_loss = F.mse_loss(q1, backup) + F.mse_loss(q2, backup) + action_penalty
+
         return q_loss
     
     def get_pi_loss(self, state):
         action, log_pi_action = self.ac.pi(state)
         q = torch.min(self.ac.q1(state, action), self.ac.q2(state, action))
-        pi_loss = torch.mean(self.alpha * log_pi_action - q)
+        pi_loss = torch.mean(-q)
         return pi_loss
     
     def get_target_loss(self, state):
