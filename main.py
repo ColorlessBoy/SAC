@@ -5,7 +5,7 @@ import csv
 from time import time
 import numpy as np
 
-from models import ActorCritic, ActorCritic
+from models import ActorCritic
 from utils import EnvSampler, EnvSampler2, hard_update
 from pg import PG
 
@@ -45,8 +45,7 @@ def run(args):
 
     def get_action(state):
         state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        action = ac_target.get_action(state, sigma=args.noise_sigma, clip=args.noise_clip) 
-        return action
+        return ac_target.get_action(state, sigma=args.noise_sigma, clip=args.noise_clip) 
 
     def get_mean_action(state):
         state = torch.FloatTensor(state).unsqueeze(0).to(device)

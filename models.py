@@ -60,7 +60,6 @@ class GenerativePolicyNetwork(nn.Module):
         distribution = Normal(torch.zeros(state.shape[0], self.action_size, device=state.device), 1.0)
 
         epsilon = distribution.sample()
-        epsilon = epsilon / epsilon.norm()
 
         action = self.net(torch.cat([state, epsilon], dim=-1))
         logp_pi = None
