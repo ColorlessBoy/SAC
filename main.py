@@ -7,7 +7,7 @@ import numpy as np
 
 from models import ActorCritic
 from utils import EnvSampler, EnvSampler2, hard_update
-from pg import PG
+from pg2 import PG
 
 def run(args):
     env = gym.make(args.env)
